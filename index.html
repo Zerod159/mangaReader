@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<header>
+    <title>MMMM</title>
+
+    <style>
+        /* Canvas nimmt immer 100% der Breite und Höhe des Viewports ein */
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #myCanvas {
+            display: none;
+        }
+
+        .loader {
+            width: fit-content;
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 30px;
+            clip-path: inset(0 3ch 0 0);
+            animation: l4 1s steps(4) infinite;
+        }
+
+        .loader:before {
+            content: "Loading..."
+        }
+
+        @keyframes l4 {
+            to {
+                clip-path: inset(0 -1ch 0 0)
+            }
+        }
+    </style>
+
+</header>
+
+<body>
+
+    <div class="loader" style="position: absolute;top: 0;display: none;"></div>
+
+
+
+    <input type="file" id="cbzSelector" name="cbzSelector" accept=".cbz" />
+    <canvas id="myCanvas"></canvas>
+
+    <div id="status" style="position: absolute;top: 0;left:0">x/x</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.9.0/src/sha256.min.js"></script>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <script src="jszip.min.js"> </script>
+    <script type="module">
+        import { Helper } from "./helper.module.js";
+
+        const helper = new Helper();
+        let images = [];
+        let currentImage = null;
+        let currentImageData = null;
+        let currentImageDataImage = null;
+        let currentTB = null;
+        const canvas = document.getElementById('myCanvas');
+        const cbzSelector = document.getElementById("cbzSelector");
+        const loader = document.querySelector(".loader");
+        const status = document.getElementById("status");
+        const ctx = canvas.getContext('2d');
+
+
+        helper.resizeCanvas(canvas);
+
+        // import ONNXRuntime Web from CDN
+        import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/esm/ort.webgpu.min.js";
+        // set wasm path override
+        ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
+
+        const session = await ort.InferenceSession.create('./model.onnx');
+
+        cbzSelector.addEventListener("change", async () => {
+            images = [];
+            if (cbzSelector.files.length >= 1) {
+                if (cbzSelector.files[0].name.endsWith("cbz")) {
+                    //Wir haben ein Archiev
+                    let archiv = await JSZip.loadAsync(cbzSelector.files[0])
+                    if (archiv.files) {
+                        let keys = Object.keys(archiv.files).sort()
+                        for (let i = 0; i < keys.length; i++) {
+                            let key = keys[i]
+                            let base64image = await archiv.files[key].async("base64")
+                            let image = await helper.convertToImage("data:image/png;base64," + base64image)
+                            image.id = i;
+                            images.push(image)
+                        }
+                    }
+                }
+                else {
+                    //alles nur einzelne Bilder
+                    const allImagesSorted = Array.from(cbzSelector.files).sort((a, b) => a.name.localeCompare(b.name, navigator.languages[0] || navigator.language, { numeric: true, ignorePunctuation: true }))
+                    for (let i = 0; i < allImagesSorted.length; i++) {
+                        let file = allImagesSorted[i]
+                        let image = await helper.convertToImage(URL.createObjectURL(file))
+                        image.id = i;
+                        images.push(image)
+                    }
+                }
+                if (images.length > 0) {
+                    canvas.style.display = "block";
+                    cbzSelector.style.display = "none";
+                    currentImage = images[0]
+                    currentTB = 0;
+                    showImage(images[0])
+                    status.innerText = `${images.filter(img=>img.analysed).length}/${images.length}`
+                    setTimeout(async() => {
+                        for(let i = 1; i < images.length; i++) {
+                            await helper.analyseImage(images[i], session, ort);
+                            status.innerText = `${images.filter(img=>img.analysed).length}/${images.length}`
+                        }
+                    }, 1);
+                }
+                console.log("File selected: ", cbzSelector.files[0]);
+            }
+        });
+
+        async function showImage(image) {
+            loader.style.display = "block";
+            let imageDrawingParams = await helper.drawImageCentered(image, canvas, ctx);
+            let imageData = null
+            if (currentImageData != null && image == currentImageDataImage) {
+                imageData = currentImageData;
+            }
+            else {
+                imageData = await helper.analyseImage(image, session, ort);
+                currentImageData = imageData;
+                currentImageDataImage = image;
+            }
+
+            if (currentTB > imageData.length - 1) {
+                currentTB = 0;
+                let index = images.indexOf(currentImage);
+                if (index < images.length - 1) {
+                    currentImage = images[index + 1];
+                    showImage(currentImage);
+                    return;
+                }
+            }
+
+            let tb = imageData[currentTB];
+            helper.talk(tb.text)
+            helper.drawBoundingBoxesTbs(ctx, [imageData[currentTB]], imageDrawingParams.offsetX, imageDrawingParams.offsetY, imageDrawingParams.drawWidthRatio, imageDrawingParams.drawHeightRatio);
+            loader.style.display = "none";
+        }
+
+        function next() {
+            if (currentTB != null) {
+                currentTB++;
+                showImage(currentImage);
+            }
+        }
+
+        function previous() {
+            if (currentTB != null) {
+                currentTB--;
+                if (currentTB < 0) {
+                    currentTB = -1
+                    let index = images.indexOf(currentImage);
+                    if (index > 0) {
+                        index--;
+                        currentTB = 0;
+                        currentImage = images[index];
+                    }
+                }
+                showImage(currentImage);
+            }
+        }
+
+
+        function nextPage() {
+            if (currentImage != null) {
+                let index = images.indexOf(currentImage);
+                if(index < images.length - 1) {
+                    currentImage = images[index + 1];
+                }
+                showImage(currentImage);
+            }
+        }
+
+        function previousPage() {
+            if (currentImage != null) {
+                let index = images.indexOf(currentImage);
+                if(index > 0) {
+                    currentImage = images[index - 1];
+                }
+                showImage(currentImage);
+            }
+        }
+
+
+        window.addEventListener('resize', async () => {
+            helper.resizeCanvas(canvas)
+            if (currentImage) {
+                let imageDrawingParams = await helper.drawImageCentered(currentImage, canvas, ctx);
+                const imageData = await helper.analyseImage(currentImage, session, ort);
+                helper.drawBoundingBoxesTbs(ctx, [imageData[currentTB]], imageDrawingParams.offsetX, imageDrawingParams.offsetY, imageDrawingParams.drawWidthRatio, imageDrawingParams.drawHeightRatio);
+            }
+        });
+
+        document.addEventListener('click', function (event) {
+            // Hole die Breite des Fensters
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+
+            // Hole die x-Koordinate des Klicks
+            const clickX = event.clientX;
+            const clickY = event.clientY;
+
+            // Überprüfe, ob der Klick auf der linken oder rechten Seite war
+            if (clickY < screenHeight / 2) {
+
+                if (clickX < screenWidth / 2) {
+                    previousPage()
+                } else {
+                    nextPage()
+                }
+            }
+            else {
+                if (clickX < screenWidth / 2) {
+                    previous()
+                } else {
+                    next()
+                }
+            }
+
+        });
+
+    </script>
+</body>
+
+</html>
