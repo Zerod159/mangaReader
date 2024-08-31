@@ -91,6 +91,7 @@
         <div id="settingsForm"></div>
         <button id="saveBtn">Speichern</button>
         <button id="cancelBtn">Abbrechen</button>
+        <button id="clearBtn">Clear</button>
     </div>
 
 
@@ -118,8 +119,7 @@
         const info = document.getElementById("info");
         const ctx = canvas.getContext('2d');
         let settings = {
-            key1: 'value1',
-            key2: 'value2'
+            externalSourceFolder: 'hashes',
             // Füge hier weitere Key-Value-Paare hinzu
         };
 
@@ -142,6 +142,12 @@
             document.getElementById('overlay').style.display = 'none';
             document.getElementById('popup').style.display = 'none';
         });
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            localStorage.removeItem('settings')
+            window.location.reload();
+        });
+
+        
         function loadSettings() {
             const form = document.getElementById('settingsForm');
             form.innerHTML = '';
@@ -215,7 +221,7 @@ function saveSettings() {
                     status.innerText = `${images.filter(img=>img.analysed).length}/${images.length}`
                     setTimeout(async() => {
                         for(let i = 1; i < images.length; i++) {
-                            await helper.analyseImage(images[i], session, ort);
+                            await helper.analyseImage(images[i], session, ort,settings);
                             status.innerText = `${images.filter(img=>img.analysed).length}/${images.length}`
                         }
                     }, 1);
@@ -232,7 +238,7 @@ function saveSettings() {
                 imageData = currentImageData;
             }
             else {
-                imageData = await helper.analyseImage(image, session, ort);
+                imageData = await helper.analyseImage(image, session, ort,settings);
                 currentImageData = imageData;
                 currentImageDataImage = image;
             }
@@ -278,6 +284,7 @@ function saveSettings() {
 
 
         function nextPage() {
+            currentTB=0;
             if (currentImage != null) {
                 let index = images.indexOf(currentImage);
                 if(index < images.length - 1) {
@@ -288,6 +295,7 @@ function saveSettings() {
         }
 
         function previousPage() {
+            currentTB=0;
             if (currentImage != null) {
                 let index = images.indexOf(currentImage);
                 if(index > 0) {
@@ -302,7 +310,7 @@ function saveSettings() {
             helper.resizeCanvas(canvas)
             if (currentImage) {
                 let imageDrawingParams = await helper.drawImageCentered(currentImage, canvas, ctx);
-                const imageData = await helper.analyseImage(currentImage, session, ort);
+                const imageData = await helper.analyseImage(currentImage, session, ort,settings);
                 helper.drawBoundingBoxesTbs(ctx, [imageData[currentTB]], imageDrawingParams.offsetX, imageDrawingParams.offsetY, imageDrawingParams.drawWidthRatio, imageDrawingParams.drawHeightRatio);
             }
         });

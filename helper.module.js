@@ -378,7 +378,7 @@ export class Helper{
             return img;
         }
 
-        async analyseImage(imageToDisplayAndAnalyse,session,ort) {
+        async analyseImage(imageToDisplayAndAnalyse,session,ort,settings) {
             try {
                 
                 let helper = this;
@@ -394,6 +394,16 @@ export class Helper{
                 if(lsAnalysedTbs){
                     imageToDisplayAndAnalyse.analysed=true;
                     return JSON.parse(lsAnalysedTbs);
+                }
+
+                if(settings && settings.externalSourceFolder&& settings.externalSourceFolder!= ""){
+                    const response = await fetch(`${settings.externalSourceFolder}/${imageHash}.json`);
+                    if (response.ok) {
+                        const analysed = await response.json()
+                        localStorage.setItem(imageHash,JSON.stringify(analysed));
+                        imageToDisplayAndAnalyse.analysed=true;
+                        return  analysed
+                    }
                 }
 
                 
@@ -479,15 +489,17 @@ export class Helper{
 
                 
                 const croppedImages = await helper.cropImage(imageOri,resultTbsInOrder)
-                const worker = await Tesseract.createWorker('eng');
+
+                if(!this.workerTesseract)
+                    this.workerTesseract = await Tesseract.createWorker('eng');
 
                 for(let i = 0; i < croppedImages.length; i++) {
                     let croppedImage = croppedImages[i];
-                    let ret = await worker.recognize(croppedImage)
+                    let ret = await this.workerTesseract.recognize(croppedImage)
                     console.log(ret.data.text);
                     resultTbsInOrder.find(tb => tb.id == croppedImage.boxId).text = ret.data.text
                 }
-                await worker.terminate();
+                //await workerTesseract.terminate();
 
                 const analysedTbs = {hash:imageHash, tbs:resultTbsInOrder.map(tb=>{return {text:tb.text,b:tb.bounding}})};
                 localStorage.setItem(imageHash,JSON.stringify(analysedTbs.tbs));
@@ -523,12 +535,13 @@ export class Helper{
 
 
         talk(text) {
-            var msg = new SpeechSynthesisUtterance();
+            if(!this.msg)
+                this.msg = new SpeechSynthesisUtterance();
             //msg.rate = 1
-            msg.rate = 1.3;
-            document.msg = msg;
-            msg.lang = 'en-US';
-            msg.text = this.improveText(text)
+            this.msg.rate = 1.3;
+            //document.msg = this.msg;
+            this.msg.lang = 'en-US';
+            this.msg.text = this.improveText(text)
             window.speechSynthesis.cancel();
             window.speechSynthesis.speak(msg);
         }
