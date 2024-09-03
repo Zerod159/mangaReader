@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html>
+<header>
+    <title>MMMM</title>
+
+    <style>
+        /* Canvas nimmt immer 100% der Breite und Höhe des Viewports ein */
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #myCanvas {
+            display: none;
+        }
+        #btnSettings{
+
+            position: absolute;
+            top: 10px;
+            right:10px;
+        }
+
+        .loader {
+            width: fit-content;
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 30px;
+            clip-path: inset(0 3ch 0 0);
+            animation: l4 1s steps(4) infinite;
+        }
+
+        .loader:before {
+            content: "Loading..."
+        }
+
+        @keyframes l4 {
+            to {
+                clip-path: inset(0 -1ch 0 0)
+            }
+        }
+
+
+
+        #popup {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid #ccc;
+            padding: 20px;
+            background: white;
+            z-index: 1000;
+        }
+        #overlay {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+    </style>
+
+</header>
+
+<body>
+
+    <div id="info" style="position: absolute;top: 0;"></div>
+    <div class="loader" style="position: absolute;top: 20px;display: none;"></div>
+    <div id="btnSettings"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M24 13.616v-3.232c-1.651-.587-2.694-.752-3.219-2.019v-.001c-.527-1.271.1-2.134.847-3.707l-2.285-2.285c-1.561.742-2.433 1.375-3.707.847h-.001c-1.269-.526-1.435-1.576-2.019-3.219h-3.232c-.582 1.635-.749 2.692-2.019 3.219h-.001c-1.271.528-2.132-.098-3.707-.847l-2.285 2.285c.745 1.568 1.375 2.434.847 3.707-.527 1.271-1.584 1.438-3.219 2.02v3.232c1.632.58 2.692.749 3.219 2.019.53 1.282-.114 2.166-.847 3.707l2.285 2.286c1.562-.743 2.434-1.375 3.707-.847h.001c1.27.526 1.436 1.579 2.019 3.219h3.232c.582-1.636.75-2.69 2.027-3.222h.001c1.262-.524 2.12.101 3.698.851l2.285-2.286c-.744-1.563-1.375-2.433-.848-3.706.527-1.271 1.588-1.44 3.221-2.021zm-12 2.384c-2.209 0-4-1.791-4-4s1.791-4 4-4 4 1.791 4 4-1.791 4-4 4z"/></svg>
+    </div>
+    <div id="overlay"></div>
+    <div id="popup">
+        <h2>Einstellungen</h2>
+        <div id="settingsForm"></div>
+        <button id="saveBtn">Speichern</button>
+        <button id="cancelBtn">Abbrechen</button>
+    </div>
+
+
+    <input type="button" id="btnGo" name="Go" value="Go" />
+    <canvas id="myCanvas"></canvas>
+
+    <div id="status" style="position: absolute;top: 0;left:0">x/x</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.9.0/src/sha256.min.js"></script>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <script src="jszip.min.js"> </script>
+    <script type="module">
+        import { Helper } from "./helper.module.js";
+
+        const helper = new Helper();
+        let images = [];
+        let currentImage = null;
+        let currentImageData = null;
+        let currentImageDataImage = null;
+        let currentTB = null;
+        const canvas = document.getElementById('myCanvas');
+        //const cbzSelector = document.getElementById("cbzSelector");
+        const loader = document.querySelector(".loader");
+        const status = document.getElementById("status");
+        const info = document.getElementById("info");
+        const btnGo = document.getElementById("btnGo");
+        const ctx = canvas.getContext('2d');
+        let settings = {
+            key1: 'value1',
+            key2: 'value2'
+            // Füge hier weitere Key-Value-Paare hinzu
+        };
+
+        const settingsStr = localStorage.getItem('settings');
+        if(settingsStr)
+            settings = JSON.parse(settingsStr)
+
+        document.getElementById('btnSettings').addEventListener('click', function() {
+            document.getElementById('overlay').style.display = 'block';
+            document.getElementById('popup').style.display = 'block';
+            loadSettings();
+        });
+        document.getElementById('cancelBtn').addEventListener('click', function() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('popup').style.display = 'none';
+        });
+
+        document.getElementById('saveBtn').addEventListener('click', function() {
+            saveSettings();
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('popup').style.display = 'none';
+        });
+        function loadSettings() {
+            const form = document.getElementById('settingsForm');
+            form.innerHTML = '';
+            for (const key in settings) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = key;
+                input.value = settings[key];
+                const label = document.createElement('label');
+                label.htmlFor = key;
+                label.innerText = key;
+                form.appendChild(label);
+                form.appendChild(input);
+                form.appendChild(document.createElement('br'));
+            }
+        }
+
+function saveSettings() {
+    for (const key in settings) {
+        const input = document.getElementById(key);
+        if (input) {
+            settings[key] = input.value;
+        }
+    }
+    localStorage.setItem('settings', JSON.stringify(settings));
+}
+
+        helper.resizeCanvas(canvas);
+
+        // import ONNXRuntime Web from CDN
+        import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/esm/ort.webgpu.min.js";
+        // set wasm path override
+        ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
+
+        const session = await ort.InferenceSession.create('./model.onnx');
+        async function loadImage(src) {
+            // Erstelle ein neues Bild-Element
+            const image = new Image();
+            
+            // Gibt ein Promise zurück, das das Bild lädt
+            return new Promise((resolve, reject) => {
+                image.onload = () => resolve(image); // Wenn das Bild geladen ist, wird es zurückgegeben
+                image.onerror = (error) => reject(new Error(`Fehler beim Laden des Bildes: ${error}`)); // Fehlerbehandlung
+                
+                image.src = src; // Setze den Pfad zum Bild
+            });
+        }
+
+        
+        btnGo.addEventListener("click",()=>{
+
+            fetch(`/get-file-path`)
+                .then(response => response.json())
+                .then(async data => {
+                   console.log(data)
+                   if(data && data.filenames)
+                   {
+                        for (let index = 4340; index < data.filenames.length; index++) {
+                            const name = data.filenames[index];
+                            const image =await loadImage("extracted_images/"+name)
+                            const imageData = await helper.analyseImage(image, session, ort);
+
+                            let imageOriData = helper.imageToImageData(image);
+                            let imageHash = await helper.hashImageData(imageOriData);
+
+                            console.log(index,name,imageHash,imageData)
+
+                            const jsonData = { name:imageHash+".json", data:imageData };
+                            const response = await fetch('/save-json', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(jsonData) // Konvertiere das JSON-Objekt in einen String
+                            });
+                        }
+                   }
+                })
+                .catch(error => {
+                    console.error('Fehler beim Abrufen des Dateipfads:', error);
+                });
+
+        })
+
+
+        async function showImage(image) {
+            loader.style.display = "block";
+            let imageDrawingParams = await helper.drawImageCentered(image, canvas, ctx);
+            let imageData = null
+            if (currentImageData != null && image == currentImageDataImage) {
+                imageData = currentImageData;
+            }
+            else {
+                imageData = await helper.analyseImage(image, session, ort);
+                currentImageData = imageData;
+                currentImageDataImage = image;
+            }
+
+            if (currentTB > imageData.length - 1) {
+                currentTB = 0;
+                let index = images.indexOf(currentImage);
+                if (index < images.length - 1) {
+                    currentImage = images[index + 1];
+                    showImage(currentImage);
+                    return;
+                }
+            }
+
+            let tb = imageData[currentTB];
+            helper.talk(tb.text)
+            helper.drawBoundingBoxesTbs(ctx, [imageData[currentTB]], imageDrawingParams.offsetX, imageDrawingParams.offsetY, imageDrawingParams.drawWidthRatio, imageDrawingParams.drawHeightRatio);
+            loader.style.display = "none";
+        }
+
+        function next() {
+            if (currentTB != null) {
+                currentTB++;
+                showImage(currentImage);
+            }
+        }
+
+        function previous() {
+            if (currentTB != null) {
+                currentTB--;
+                if (currentTB < 0) {
+                    currentTB = -1
+                    let index = images.indexOf(currentImage);
+                    if (index > 0) {
+                        index--;
+                        currentTB = 0;
+                        currentImage = images[index];
+                    }
+                }
+                showImage(currentImage);
+            }
+        }
+
+
+        function nextPage() {
+            currentTB=0;
+            if (currentImage != null) {
+                let index = images.indexOf(currentImage);
+                if(index < images.length - 1) {
+                    currentImage = images[index + 1];
+                }
+                showImage(currentImage);
+            }
+        }
+
+        function previousPage() {
+            currentTB=0;
+            if (currentImage != null) {
+                let index = images.indexOf(currentImage);
+                if(index > 0) {
+                    currentImage = images[index - 1];
+                }
+                showImage(currentImage);
+            }
+        }
+
+
+        window.addEventListener('resize', async () => {
+            helper.resizeCanvas(canvas)
+            if (currentImage) {
+                let imageDrawingParams = await helper.drawImageCentered(currentImage, canvas, ctx);
+                const imageData = await helper.analyseImage(currentImage, session, ort);
+                helper.drawBoundingBoxesTbs(ctx, [imageData[currentTB]], imageDrawingParams.offsetX, imageDrawingParams.offsetY, imageDrawingParams.drawWidthRatio, imageDrawingParams.drawHeightRatio);
+            }
+        });
+
+        document.addEventListener('click', function (event) {
+            // Hole die Breite des Fensters
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+
+            // Hole die x-Koordinate des Klicks
+            const clickX = event.clientX;
+            const clickY = event.clientY;
+
+            // Überprüfe, ob der Klick auf der linken oder rechten Seite war
+            if (clickY < screenHeight / 2) {
+
+                if (clickX < screenWidth / 2) {
+                    previousPage()
+                } else {
+                    nextPage()
+                }
+            }
+            else {
+                if (clickX < screenWidth / 2) {
+                    previous()
+                } else {
+                    next()
+                }
+            }
+
+        });
+
+    </script>
+</body>
+
+</html>
