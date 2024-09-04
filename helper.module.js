@@ -543,7 +543,7 @@ export class Helper{
             this.msg.lang = 'en-US';
             this.msg.text = this.improveText(text)
             window.speechSynthesis.cancel();
-            window.speechSynthesis.speak(msg);
+            window.speechSynthesis.speak(this.msg);
         }
 
 
